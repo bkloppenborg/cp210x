@@ -310,6 +310,7 @@ static struct usb_serial_driver cp210x_device = {
 	.unthrottle		= usb_serial_generic_unthrottle,
 	.tiocmget		= cp210x_tiocmget,
 	.tiocmset		= cp210x_tiocmset,
+	.tiocmiwait		= usb_serial_generic_tiocmiwait,
 	.get_icount		= usb_serial_generic_get_icount,
 	.attach			= cp210x_attach,
 	.disconnect		= cp210x_disconnect,
@@ -458,6 +459,16 @@ struct cp210x_comm_status {
 #define CP210X_LSR_PARITY	BIT(2)
 #define CP210X_LSR_FRAME	BIT(3)
 #define CP210X_LSR_BREAK	BIT(4)
+
+/* Bits for Modem Status EMBED_EVENTS as described in AN571 */
+#define CP210X_MSR_DELTA_CTS_BIT 	BIT(0)
+#define CP210X_MSR_DELTA_DSR_BIT 	BIT(1)
+#define CP210X_MSR_DELTA_RI_BIT 	BIT(2)
+#define CP210X_MSR_DELTA_DCD_BIT 	BIT(3)
+#define CP210X_MSR_CTS_STATE_BIT 	BIT(4)
+#define CP210X_MSR_DSR_STATE_BIT 	BIT(5)
+#define CP210X_MSR_RI_STATE_BIT 	BIT(6)
+#define CP210X_MSR_DCD_STATE_BIT	BIT(7)
 
 
 /* CP210X_GET_FLOW/CP210X_SET_FLOW read/write these 0x10 bytes */
@@ -832,6 +843,7 @@ static void cp210x_process_lsr(struct usb_serial_port *port, unsigned char lsr, 
 static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch, char *flag)
 {
 	struct cp210x_port_private *port_priv = usb_get_serial_port_data(port);
+	struct tty_struct *tty;
 
 	switch (port_priv->event_state) {
 	case ES_DATA:
@@ -880,7 +892,38 @@ static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch,
 		break;
 	case ES_MSR:
 		dev_dbg(&port->dev, "%s - msr = 0x%02x\n", __func__, *ch);
-		/* unimplemented */
+
+		if(*ch == CP210X_MSR_DELTA_CTS_BIT) {
+					port->icount.cts++;
+		}
+
+		if(*ch == CP210X_MSR_DELTA_DSR_BIT) {
+			port->icount.dsr++;
+		}
+
+		if(*ch == CP210X_MSR_DELTA_RI_BIT) {
+			port->icount.rng++;
+		}
+
+		if(*ch == CP210X_MSR_DELTA_DCD_BIT) {
+			port->icount.dcd++;
+
+			tty = tty_port_tty_get(&port->port);
+			if (tty) {
+				usb_serial_handle_dcd_change(port, tty,
+					(*ch) & CP210X_MSR_DCD_STATE_BIT);
+			}
+			tty_kref_put(tty);
+
+		}
+
+		if(*ch == CP210X_MSR_CTS_STATE_BIT) {
+			port->icount.cts++;
+		}
+
+		// Signal that a modem status event happened
+		wake_up_interruptible(&port->port.delta_msr_wait);
+
 		port_priv->event_state = ES_DATA;
 		break;
 	}
@@ -1315,10 +1358,10 @@ static void cp210x_set_termios(struct tty_struct *tty,
 	 * Enable event-insertion mode only if input parity checking is
 	 * enabled for now.
 	 */
-	if (I_INPCK(tty))
+//	if (I_INPCK(tty))
 		cp210x_enable_event_mode(port);
-	else
-		cp210x_disable_event_mode(port);
+//	else
+//		cp210x_disable_event_mode(port);
 }
 
 static int cp210x_tiocmset(struct tty_struct *tty,
