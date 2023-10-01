@@ -33,13 +33,13 @@ static void cp210x_close(struct usb_serial_port *);
 static void cp210x_change_speed(struct tty_struct *, struct usb_serial_port *,
 				const struct ktermios *);
 static void cp210x_set_termios(struct tty_struct *, struct usb_serial_port *,
-			       const struct ktermios *);
+			       struct ktermios *);
 static bool cp210x_tx_empty(struct usb_serial_port *port);
 static int cp210x_tiocmget(struct tty_struct *);
 static int cp210x_tiocmset(struct tty_struct *, unsigned int, unsigned int);
 static int cp210x_tiocmset_port(struct usb_serial_port *port,
 		unsigned int, unsigned int);
-static int cp210x_break_ctl(struct tty_struct *, int);
+void cp210x_break_ctl(struct tty_struct *, int);
 static int cp210x_attach(struct usb_serial *);
 static void cp210x_disconnect(struct usb_serial *);
 static void cp210x_release(struct usb_serial *);
@@ -1249,7 +1249,7 @@ out_unlock:
 
 static void cp210x_set_termios(struct tty_struct *tty,
 		               struct usb_serial_port *port,
-		               const struct ktermios *old_termios)
+		               struct ktermios *old_termios)
 {
 	struct cp210x_serial_private *priv = usb_get_serial_data(port->serial);
 	u16 bits;
@@ -1434,7 +1434,7 @@ static int cp210x_tiocmget(struct tty_struct *tty)
 	return result;
 }
 
-static int cp210x_break_ctl(struct tty_struct *tty, int break_state)
+void cp210x_break_ctl(struct tty_struct *tty, int break_state)
 {
 	struct usb_serial_port *port = tty->driver_data;
 	struct cp210x_serial_private *priv = usb_get_serial_data(port->serial);
@@ -1442,7 +1442,7 @@ static int cp210x_break_ctl(struct tty_struct *tty, int break_state)
 
 	if (priv->partnum == CP210X_PARTNUM_CP2105) {
 		if (cp210x_interface_num(port->serial) == 1)
-			return -ENOTTY;
+			return; // -ENOTTY;
 	}
 
 	if (break_state == 0)
@@ -1453,7 +1453,8 @@ static int cp210x_break_ctl(struct tty_struct *tty, int break_state)
 	dev_dbg(&port->dev, "%s - turning break %s\n", __func__,
 		state == BREAK_OFF ? "off" : "on");
 
-	return cp210x_write_u16_reg(port, CP210X_SET_BREAK, state);
+	cp210x_write_u16_reg(port, CP210X_SET_BREAK, state);
+	//return cp210x_write_u16_reg(port, CP210X_SET_BREAK, state);
 }
 
 #ifdef CONFIG_GPIOLIB
