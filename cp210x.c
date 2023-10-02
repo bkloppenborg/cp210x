@@ -894,7 +894,7 @@ static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch,
 		dev_dbg(&port->dev, "%s - msr = 0x%02x\n", __func__, *ch);
 
 		if(*ch == CP210X_MSR_DELTA_CTS_BIT) {
-					port->icount.cts++;
+			port->icount.cts++;
 		}
 
 		if(*ch == CP210X_MSR_DELTA_DSR_BIT) {
@@ -903,6 +903,16 @@ static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch,
 
 		if(*ch == CP210X_MSR_DELTA_RI_BIT) {
 			port->icount.rng++;
+
+			// Adafruit Ultimate GPS with USB has PPS connected to the RI
+			// line. Use usb_serial_handle_dcd_change to signal the PPS change
+			// to the kernel.
+			tty = tty_port_tty_get(&port->port);
+			if (tty) {
+				usb_serial_handle_dcd_change(port, tty,
+					(*ch) & CP210X_MSR_DCD_STATE_BIT);
+			}
+			tty_kref_put(tty);
 		}
 
 		if(*ch == CP210X_MSR_DELTA_DCD_BIT) {
