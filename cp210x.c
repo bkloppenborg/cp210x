@@ -285,6 +285,7 @@ struct cp210x_port_private {
 	bool			event_mode;
 	enum cp210x_event_state event_state;
 	u8			lsr;
+	u8			msr;
 
 	struct mutex		mutex;
 	bool			crtscts;
@@ -797,6 +798,8 @@ static int cp210x_open(struct tty_struct *tty, struct usb_serial_port *port)
 	if (result)
 		goto err_disable;
 
+	cp210x_enable_event_mode(port);
+
 	return 0;
 
 err_disable:
@@ -809,6 +812,8 @@ err_disable:
 static void cp210x_close(struct usb_serial_port *port)
 {
 	struct cp210x_port_private *port_priv = usb_get_serial_port_data(port);
+
+	cp210x_disable_event_mode(port);
 
 	usb_serial_generic_close(port);
 
@@ -840,10 +845,54 @@ static void cp210x_process_lsr(struct usb_serial_port *port, unsigned char lsr, 
 	}
 }
 
+static void cp210x_process_msr(struct usb_serial_port *port, unsigned char msr, char *flag)
+{
+	struct tty_struct *tty;
+
+	if(msr == CP210X_MSR_DELTA_CTS_BIT) {
+		port->icount.cts++;
+	}
+
+	if(msr == CP210X_MSR_DELTA_DSR_BIT) {
+		port->icount.dsr++;
+	}
+
+	if(msr == CP210X_MSR_DELTA_RI_BIT) {
+		port->icount.rng++;
+
+		// Support PPS signal on Ring Indicator pin. While uncommon, this is
+		// found on some devices, like the Adafruit Ultimate GPS USB-C edition.
+		tty = tty_port_tty_get(&port->port);
+		if (tty) {
+			usb_serial_handle_dcd_change(port, tty,
+				(msr) & CP210X_MSR_DCD_STATE_BIT);
+		}
+		tty_kref_put(tty);
+	}
+
+	if(msr == CP210X_MSR_DELTA_DCD_BIT) {
+		port->icount.dcd++;
+
+		tty = tty_port_tty_get(&port->port);
+		if (tty) {
+			usb_serial_handle_dcd_change(port, tty,
+				(msr) & CP210X_MSR_DCD_STATE_BIT);
+		}
+		tty_kref_put(tty);
+
+	}
+
+	if(msr == CP210X_MSR_CTS_STATE_BIT) {
+		port->icount.cts++;
+	}
+
+	// Signal that a modem status event happened
+	wake_up_interruptible(&port->port.delta_msr_wait);
+}
+
 static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch, char *flag)
 {
 	struct cp210x_port_private *port_priv = usb_get_serial_port_data(port);
-	struct tty_struct *tty;
 
 	switch (port_priv->event_state) {
 	case ES_DATA:
@@ -892,48 +941,8 @@ static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch,
 		break;
 	case ES_MSR:
 		dev_dbg(&port->dev, "%s - msr = 0x%02x\n", __func__, *ch);
-
-		if(*ch == CP210X_MSR_DELTA_CTS_BIT) {
-			port->icount.cts++;
-		}
-
-		if(*ch == CP210X_MSR_DELTA_DSR_BIT) {
-			port->icount.dsr++;
-		}
-
-		if(*ch == CP210X_MSR_DELTA_RI_BIT) {
-			port->icount.rng++;
-
-			// Adafruit Ultimate GPS with USB has PPS connected to the RI
-			// line. Use usb_serial_handle_dcd_change to signal the PPS change
-			// to the kernel.
-			tty = tty_port_tty_get(&port->port);
-			if (tty) {
-				usb_serial_handle_dcd_change(port, tty,
-					(*ch) & CP210X_MSR_DCD_STATE_BIT);
-			}
-			tty_kref_put(tty);
-		}
-
-		if(*ch == CP210X_MSR_DELTA_DCD_BIT) {
-			port->icount.dcd++;
-
-			tty = tty_port_tty_get(&port->port);
-			if (tty) {
-				usb_serial_handle_dcd_change(port, tty,
-					(*ch) & CP210X_MSR_DCD_STATE_BIT);
-			}
-			tty_kref_put(tty);
-
-		}
-
-		if(*ch == CP210X_MSR_CTS_STATE_BIT) {
-			port->icount.cts++;
-		}
-
-		// Signal that a modem status event happened
-		wake_up_interruptible(&port->port.delta_msr_wait);
-
+		port_priv->msr = *ch;
+		cp210x_process_msr(port, port_priv->lsr, flag);
 		port_priv->event_state = ES_DATA;
 		break;
 	}
@@ -1363,15 +1372,6 @@ static void cp210x_set_termios(struct tty_struct *tty,
 		dev_err(&port->dev, "failed to set line control: %d\n", ret);
 
 	cp210x_set_flow_control(tty, port, old_termios);
-
-	/*
-	 * Enable event-insertion mode only if input parity checking is
-	 * enabled for now.
-	 */
-//	if (I_INPCK(tty))
-		cp210x_enable_event_mode(port);
-//	else
-//		cp210x_disable_event_mode(port);
 }
 
 static int cp210x_tiocmset(struct tty_struct *tty,
