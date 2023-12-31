@@ -5,11 +5,29 @@ This project modifies the stock Linux kernel driver for the Silicon Labs
 CP210X suite of devices to add support for modem control / status line
 changes with particular attention to the Pulse Per Second (PPS) signal.
 
-These changes have been submitted as a patch to the Linux Kernel. Until those
-changes are supported in your distribution, you can build and use this driver.
-
 This was built and tested using Linux 5.15.0-84-generic with the Adafruit
 GPS with USB-C (i.e. version 3) with the CP2012N USB to Serial Adapter.
+
+# Driver will NOT make it into the Linux kernel
+
+Unfortunately, the changes contained herein will NOT appear in the upstream
+Linux kernel. The patch was rejected for two reasons:
+
+1. This driver requires every character coming from the serial device be
+   inspected for a special escape sequence. While necessary for the GPS
+   receiver, it is unnecessary for the majority of devices. As such, it was
+   regarded as undesirable behavior.
+   
+2. The timing precision provided by this device was regarded as inferior when
+   compared to traditional serial devices. Traditional serial PPS devices yield
+   timing precision of ~5-10 nanoseconds relevant to UTC. Because this device
+   connects as a full-speed (USB 1.1) device, its timing precision is limited
+   to 1 millisecond. If it could be made to operate as a high-speed (USB 2.0)
+   device its timing precision would be 0.125 ms. Both were regarded as
+   inferior compared with a true PPS device.
+
+I would caution the user to keep these things in consideration before using
+this driver.
 
 # Summary of modifications
 
@@ -19,6 +37,9 @@ GPS with USB-C (i.e. version 3) with the CP2012N USB to Serial Adapter.
 3. Add support for the Adafruit GPS with USB-C's PPS signal on the RI line.
 
 # Building, testing, and installing
+
+The following instructions were written for Ubuntu 20.04. Your operating
+system may require different installation steps.
 
 1. Blacklist the stock driver in the Linux Kernel by adding `blacklist cp210x`
 to the end of the `/etc/modprobe.d/blacklist.conf` file. Then reboot your

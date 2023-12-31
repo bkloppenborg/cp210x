@@ -849,15 +849,15 @@ static void cp210x_process_msr(struct usb_serial_port *port, unsigned char msr, 
 {
 	struct tty_struct *tty;
 
-	if(msr == CP210X_MSR_DELTA_CTS_BIT) {
+	if(msr & CP210X_MSR_DELTA_CTS_BIT) {
 		port->icount.cts++;
 	}
 
-	if(msr == CP210X_MSR_DELTA_DSR_BIT) {
+	if(msr & CP210X_MSR_DELTA_DSR_BIT) {
 		port->icount.dsr++;
 	}
 
-	if(msr == CP210X_MSR_DELTA_RI_BIT) {
+	if(msr & CP210X_MSR_DELTA_RI_BIT) {
 		port->icount.rng++;
 
 		// Support PPS signal on Ring Indicator pin. While uncommon, this is
@@ -865,12 +865,12 @@ static void cp210x_process_msr(struct usb_serial_port *port, unsigned char msr, 
 		tty = tty_port_tty_get(&port->port);
 		if (tty) {
 			usb_serial_handle_dcd_change(port, tty,
-				(msr) & CP210X_MSR_DCD_STATE_BIT);
+				(msr) & CP210X_MSR_RI_STATE_BIT);
 		}
 		tty_kref_put(tty);
 	}
 
-	if(msr == CP210X_MSR_DELTA_DCD_BIT) {
+	if(msr & CP210X_MSR_DELTA_DCD_BIT) {
 		port->icount.dcd++;
 
 		tty = tty_port_tty_get(&port->port);
@@ -882,11 +882,10 @@ static void cp210x_process_msr(struct usb_serial_port *port, unsigned char msr, 
 
 	}
 
-	if(msr == CP210X_MSR_CTS_STATE_BIT) {
+	if(msr & CP210X_MSR_CTS_STATE_BIT) {
 		port->icount.cts++;
 	}
 
-	// Signal that a modem status event happened
 	wake_up_interruptible(&port->port.delta_msr_wait);
 }
 
@@ -942,7 +941,7 @@ static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch,
 	case ES_MSR:
 		dev_dbg(&port->dev, "%s - msr = 0x%02x\n", __func__, *ch);
 		port_priv->msr = *ch;
-		cp210x_process_msr(port, port_priv->lsr, flag);
+		cp210x_process_msr(port, port_priv->msr, flag);
 		port_priv->event_state = ES_DATA;
 		break;
 	}
