@@ -1,26 +1,29 @@
-cp210x driver with PPS support
-=====
+# cp210x driver with PPS support
 
 This project modifies the stock Linux kernel driver for the Silicon Labs
 CP210X suite of devices to add support for modem control / status line
 changes with particular attention to the Pulse Per Second (PPS) signal.
 
-This was built and tested using Linux 5.15.0-84-generic with the Adafruit
-GPS with USB-C (i.e. version 3) with the CP2012N USB to Serial Adapter.
+This tree is based on the upstream Linux **7.0** `cp210x` driver, with the
+PPS-on-RI changes originally developed by Brian Kloppenborg for 5.15
+(https://github.com/bkloppenborg/cp210x) ported forward.
+
+It was developed for the Adafruit Ultimate GPS with USB-C (CP2102N), which
+routes the PPS signal to the Ring Indicator (RI) pin.
 
 # Driver will NOT make it into the Linux kernel
 
 Unfortunately, the changes contained herein will NOT appear in the upstream
-Linux kernel. The patch was rejected for two reasons:
+Linux kernel. The original patch was rejected for two reasons:
 
 1. This driver requires every character coming from the serial device be
    inspected for a special escape sequence. While necessary for the GPS
    receiver, it is unnecessary for the majority of devices. As such, it was
    regarded as undesirable behavior.
-   
+
 2. The timing precision provided by this device was regarded as inferior when
    compared to traditional serial devices. Traditional serial PPS devices yield
-   timing precision of ~5-10 nanoseconds relevant to UTC. Because this device
+   timing precision of ~5-10 nanoseconds relative to UTC. Because this device
    connects as a full-speed (USB 1.1) device, its timing precision is limited
    to 1 millisecond. If it could be made to operate as a high-speed (USB 2.0)
    device its timing precision would be 0.125 ms. Both were regarded as
@@ -29,59 +32,46 @@ Linux kernel. The patch was rejected for two reasons:
 I would caution the user to keep these things in consideration before using
 this driver.
 
-# Summary of modifications
+# Summary of modifications (relative to stock 7.0)
 
-1. Backport the interfaces to the 5.15.0 kernel. You can revert this by
-   skipping commit `4d9f958f6b44de604ffa81d09bcfa851aef92f56`.
-2. Add support for `TIOCMIWAIT` and modem status `EMBED_EVENTS`
-3. Add support for the Adafruit GPS with USB-C's PPS signal on the RI line.
+1. Always enable CP210x `EMBED_EVENTS` while the port is open (stock only
+   enables it when input parity checking / `INPCK` is set).
+2. Implement modem-status event handling (`CTS` / `DSR` / `RI` / `DCD`) and
+   wire up `TIOCMIWAIT` via `usb_serial_generic_tiocmiwait`.
+3. Treat RI trailing-edge events as PPS: notify the `N_PPS` line discipline
+   through `dcd_change` (without hanging up the tty on a clear edge).
+4. Keep stock 7.0 APIs (`kzalloc_obj`, `gpio_chip.set` returning `int`,
+   current `usb_serial_driver` / termios signatures, device ID table).
 
 # Building, testing, and installing
 
-The following instructions were written for Ubuntu 20.04. Your operating
-system may require different installation steps.
-
-1. Blacklist the stock driver in the Linux Kernel by adding `blacklist cp210x`
-to the end of the `/etc/modprobe.d/blacklist.conf` file. Then reboot your
-computer.
+1. Install build deps for your running kernel:
 
 ```
-$ tail /etc/modprobe.d/blacklist.conf
-...
-blacklist cp210x
+sudo apt install linux-headers-$(uname -r) build-essential zstd
 ```
 
-2. Install the Linux headers for your kernel version
+2. Build, install over the stock module (keeps a `.stock` backup), and reload:
 
 ```
-sudo apt install linux-headers-`uname -r`-generic
-```
-
-3. Clone and build this repository
-
-```
-git clone https://github.com/bkloppenborg/cp210x
+git clone https://github.com/sergei202/cp210x
 cd cp210x
-make
-sudo insmod ./cp210x.ko
+sudo ./install.sh
 ```
 
-4. Test that the driver works.
+Re-run `sudo ./install.sh` after every kernel update. Subcommands:
+`--status`, `--build`, `--reload`.
 
-Plug in your device. If it ends up on `/dev/ttyUSB0`:
+3. With the GPS attached (e.g. `/dev/ttyUSB0`) and a 3D fix:
 
 ```
+# Kernel PPS via line discipline (creates /dev/ppsN)
+sudo ldattach 18 /dev/ttyUSB0 &
+sudo ppstest /dev/pps0
+
+# Or let gpsd attach KPPS itself
 sudo gpsmon /dev/ttyUSB0
 ```
 
-You should see GPS + PPS signals on the console.
-
-5. Install the driver
-
-```
-sudo cp ./cp210x.ko /usr/lib/modules/`uname-r`/kernel/drivers/usb/serial/
-```
-
-Note that you'll need to repeat this step every time the kernel is updated.
-
-6. Undo the blacklist in step 1 to use the new driver.
+You should see regular assert events from `ppstest`, and gpsd should no
+longer report that kernel PPS / TIOCMIWAIT is unavailable.

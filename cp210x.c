@@ -39,7 +39,7 @@ static int cp210x_tiocmget(struct tty_struct *);
 static int cp210x_tiocmset(struct tty_struct *, unsigned int, unsigned int);
 static int cp210x_tiocmset_port(struct usb_serial_port *port,
 		unsigned int, unsigned int);
-int cp210x_break_ctl(struct tty_struct *, int);
+static int cp210x_break_ctl(struct tty_struct *, int);
 static int cp210x_attach(struct usb_serial *);
 static void cp210x_disconnect(struct usb_serial *);
 static void cp210x_release(struct usb_serial *);
@@ -56,6 +56,8 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x0471, 0x066A) }, /* AKTAKOM ACE-1001 cable */
 	{ USB_DEVICE(0x0489, 0xE000) }, /* Pirelli Broadband S.p.A, DP-L10 SIP/GSM Mobile */
 	{ USB_DEVICE(0x0489, 0xE003) }, /* Pirelli Broadband S.p.A, DP-L10 SIP/GSM Mobile */
+	{ USB_DEVICE(0x04BF, 0x1301) }, /* TDK Corporation NC0110013M - Network Controller */
+	{ USB_DEVICE(0x04BF, 0x1303) }, /* TDK Corporation MM0110113M - i3 Micro Module */
 	{ USB_DEVICE(0x0745, 0x1000) }, /* CipherLab USB CCD Barcode Scanner 1000 */
 	{ USB_DEVICE(0x0846, 0x1100) }, /* NetGear Managed Switch M4100 series, M5300 series, M7100 series */
 	{ USB_DEVICE(0x08e6, 0x5501) }, /* Gemalto Prox-PU/CU contactless smartcard reader */
@@ -144,8 +146,10 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x10C4, 0x85EA) }, /* AC-Services IBUS-IF */
 	{ USB_DEVICE(0x10C4, 0x85EB) }, /* AC-Services CIS-IBUS */
 	{ USB_DEVICE(0x10C4, 0x85F8) }, /* Virtenio Preon32 */
+	{ USB_DEVICE(0x10C4, 0x863C) }, /* MGP Instruments PDS100 */
 	{ USB_DEVICE(0x10C4, 0x8664) }, /* AC-Services CAN-IF */
 	{ USB_DEVICE(0x10C4, 0x8665) }, /* AC-Services OBD-IF */
+	{ USB_DEVICE(0x10C4, 0x87ED) }, /* IMST USB-Stick for Smart Meter */
 	{ USB_DEVICE(0x10C4, 0x8856) },	/* CEL EM357 ZigBee USB Stick - LR */
 	{ USB_DEVICE(0x10C4, 0x8857) },	/* CEL EM357 ZigBee USB Stick */
 	{ USB_DEVICE(0x10C4, 0x88A4) }, /* MMB Networks ZigBee USB Device */
@@ -176,6 +180,7 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x10C4, 0xF004) }, /* Elan Digital Systems USBcount50 */
 	{ USB_DEVICE(0x10C5, 0xEA61) }, /* Silicon Labs MobiData GPRS USB Modem */
 	{ USB_DEVICE(0x10CE, 0xEA6A) }, /* Silicon Labs MobiData GPRS USB Modem 100EU */
+	{ USB_DEVICE(0x11CA, 0x0212) }, /* Verifone USB to Printer (UART, CP2102) */
 	{ USB_DEVICE(0x12B8, 0xEC60) }, /* Link G4 ECU */
 	{ USB_DEVICE(0x12B8, 0xEC62) }, /* Link G4+ ECU */
 	{ USB_DEVICE(0x13AD, 0x9999) }, /* Baltech card reader */
@@ -218,6 +223,7 @@ static const struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x19CF, 0x3000) }, /* Parrot NMEA GPS Flight Recorder */
 	{ USB_DEVICE(0x1ADB, 0x0001) }, /* Schweitzer Engineering C662 Cable */
 	{ USB_DEVICE(0x1B1C, 0x1C00) }, /* Corsair USB Dongle */
+	{ USB_DEVICE(0x1B93, 0x1013) }, /* Phoenix Contact UPS Device */
 	{ USB_DEVICE(0x1BA4, 0x0002) },	/* Silicon Labs 358x factory default */
 	{ USB_DEVICE(0x1BE3, 0x07A6) }, /* WAGO 750-923 USB Service Cable */
 	{ USB_DEVICE(0x1D6F, 0x0010) }, /* Seluxit ApS RF Dongle */
@@ -295,7 +301,6 @@ struct cp210x_port_private {
 
 static struct usb_serial_driver cp210x_device = {
 	.driver = {
-		.owner =	THIS_MODULE,
 		.name =		"cp210x",
 	},
 	.id_table		= id_table,
@@ -461,16 +466,15 @@ struct cp210x_comm_status {
 #define CP210X_LSR_FRAME	BIT(3)
 #define CP210X_LSR_BREAK	BIT(4)
 
-/* Bits for Modem Status EMBED_EVENTS as described in AN571 */
-#define CP210X_MSR_DELTA_CTS_BIT 	BIT(0)
-#define CP210X_MSR_DELTA_DSR_BIT 	BIT(1)
-#define CP210X_MSR_DELTA_RI_BIT 	BIT(2)
-#define CP210X_MSR_DELTA_DCD_BIT 	BIT(3)
-#define CP210X_MSR_CTS_STATE_BIT 	BIT(4)
-#define CP210X_MSR_DSR_STATE_BIT 	BIT(5)
-#define CP210X_MSR_RI_STATE_BIT 	BIT(6)
-#define CP210X_MSR_DCD_STATE_BIT	BIT(7)
-
+/* Modem Status bits in EMBED_EVENTS (Silicon Labs AN571) */
+#define CP210X_MSR_DELTA_CTS	BIT(0)
+#define CP210X_MSR_DELTA_DSR	BIT(1)
+#define CP210X_MSR_DELTA_RI	BIT(2)	/* trailing/falling edge of RI */
+#define CP210X_MSR_DELTA_DCD	BIT(3)
+#define CP210X_MSR_CTS		BIT(4)
+#define CP210X_MSR_DSR		BIT(5)
+#define CP210X_MSR_RI		BIT(6)
+#define CP210X_MSR_DCD		BIT(7)
 
 /* CP210X_GET_FLOW/CP210X_SET_FLOW read/write these 0x10 bytes */
 struct cp210x_flow_ctl {
@@ -798,6 +802,11 @@ static int cp210x_open(struct tty_struct *tty, struct usb_serial_port *port)
 	if (result)
 		goto err_disable;
 
+	/*
+	 * Always enable event-insertion mode so modem-status changes (CTS,
+	 * DSR, RI, DCD) are embedded in the bulk-in stream. Required for
+	 * TIOCMIWAIT and for PPS on RI (e.g. Adafruit Ultimate GPS USB-C).
+	 */
 	cp210x_enable_event_mode(port);
 
 	return 0;
@@ -845,45 +854,64 @@ static void cp210x_process_lsr(struct usb_serial_port *port, unsigned char lsr, 
 	}
 }
 
-static void cp210x_process_msr(struct usb_serial_port *port, unsigned char msr, char *flag)
+/*
+ * Notify the line discipline of a DCD-like change without the hangup side
+ * effect of usb_serial_handle_dcd_change() when status is clear. Needed for
+ * PPS-on-RI: AN571 reports RI via a trailing-edge detector, so the useful
+ * edge often arrives with RI inactive.
+ */
+static void cp210x_report_ldisc_dcd(struct usb_serial_port *port, bool active)
 {
 	struct tty_struct *tty;
+	struct tty_ldisc *ld;
 
-	if(msr & CP210X_MSR_DELTA_CTS_BIT) {
+	tty = tty_port_tty_get(&port->port);
+	if (!tty)
+		return;
+
+	ld = tty_ldisc_ref(tty);
+	if (ld) {
+		if (ld->ops->dcd_change)
+			ld->ops->dcd_change(tty, active);
+		tty_ldisc_deref(ld);
+	}
+
+	tty_kref_put(tty);
+}
+
+static void cp210x_process_msr(struct usb_serial_port *port, u8 msr)
+{
+	if (msr & CP210X_MSR_DELTA_CTS)
 		port->icount.cts++;
-	}
 
-	if(msr & CP210X_MSR_DELTA_DSR_BIT) {
+	if (msr & CP210X_MSR_DELTA_DSR)
 		port->icount.dsr++;
-	}
 
-	if(msr & CP210X_MSR_DELTA_RI_BIT) {
+	if (msr & CP210X_MSR_DELTA_RI) {
 		port->icount.rng++;
 
-		// Support PPS signal on Ring Indicator pin. While uncommon, this is
-		// found on some devices, like the Adafruit Ultimate GPS USB-C edition.
-		tty = tty_port_tty_get(&port->port);
-		if (tty) {
-			usb_serial_handle_dcd_change(port, tty,
-				(msr) & CP210X_MSR_RI_STATE_BIT);
-		}
-		tty_kref_put(tty);
+		/*
+		 * Adafruit Ultimate GPS USB-C (and similar) put PPS on RI.
+		 * Feed N_PPS via dcd_change. Prefer an assert edge so
+		 * ppstest/chrony see CAPTUREASSERT; AN571 only flags the
+		 * trailing RI edge, when RI_STATE is typically clear.
+		 */
+		cp210x_report_ldisc_dcd(port, true);
 	}
 
-	if(msr & CP210X_MSR_DELTA_DCD_BIT) {
+	if (msr & CP210X_MSR_DELTA_DCD) {
+		struct tty_struct *tty;
+
 		port->icount.dcd++;
-
+		/*
+		 * Real DCD must use usb_serial_handle_dcd_change() so carrier
+		 * drop can hang up when CLOCAL is clear.
+		 */
 		tty = tty_port_tty_get(&port->port);
-		if (tty) {
+		if (tty)
 			usb_serial_handle_dcd_change(port, tty,
-				(msr) & CP210X_MSR_DCD_STATE_BIT);
-		}
+					msr & CP210X_MSR_DCD);
 		tty_kref_put(tty);
-
-	}
-
-	if(msr & CP210X_MSR_CTS_STATE_BIT) {
-		port->icount.cts++;
 	}
 
 	wake_up_interruptible(&port->port.delta_msr_wait);
@@ -941,7 +969,7 @@ static bool cp210x_process_char(struct usb_serial_port *port, unsigned char *ch,
 	case ES_MSR:
 		dev_dbg(&port->dev, "%s - msr = 0x%02x\n", __func__, *ch);
 		port_priv->msr = *ch;
-		cp210x_process_msr(port, port_priv->msr, flag);
+		cp210x_process_msr(port, port_priv->msr);
 		port_priv->event_state = ES_DATA;
 		break;
 	}
@@ -1371,6 +1399,13 @@ static void cp210x_set_termios(struct tty_struct *tty,
 		dev_err(&port->dev, "failed to set line control: %d\n", ret);
 
 	cp210x_set_flow_control(tty, port, old_termios);
+
+	/*
+	 * Keep event-insertion mode enabled whenever the port is configured.
+	 * Stock only enables it for INPCK (line-status/parity); modem-status
+	 * consumers (TIOCMIWAIT / PPS on RI) need it unconditionally.
+	 */
+	cp210x_enable_event_mode(port);
 }
 
 static int cp210x_tiocmset(struct tty_struct *tty,
@@ -1486,7 +1521,7 @@ static int cp210x_tiocmget(struct tty_struct *tty)
 	return result;
 }
 
-int cp210x_break_ctl(struct tty_struct *tty, int break_state)
+static int cp210x_break_ctl(struct tty_struct *tty, int break_state)
 {
 	struct usb_serial_port *port = tty->driver_data;
 	struct cp210x_serial_private *priv = usb_get_serial_data(port->serial);
@@ -1606,8 +1641,10 @@ out:
 	if (result < 0) {
 		dev_err(&serial->interface->dev, "failed to set GPIO value: %d\n",
 				result);
+		return result;
 	}
-	return result;
+
+	return 0;
 }
 
 static int cp210x_gpio_direction_get(struct gpio_chip *gc, unsigned int gpio)
@@ -1647,9 +1684,8 @@ static int cp210x_gpio_direction_output(struct gpio_chip *gc, unsigned int gpio,
 	struct cp210x_serial_private *priv = usb_get_serial_data(serial);
 
 	priv->gpio_input &= ~BIT(gpio);
-	cp210x_gpio_set(gc, gpio, value);
 
-	return 0;
+	return cp210x_gpio_set(gc, gpio, value);
 }
 
 static int cp210x_gpio_set_config(struct gpio_chip *gc, unsigned int gpio,
@@ -2052,7 +2088,7 @@ static int cp210x_port_probe(struct usb_serial_port *port)
 	struct usb_serial *serial = port->serial;
 	struct cp210x_port_private *port_priv;
 
-	port_priv = kzalloc(sizeof(*port_priv), GFP_KERNEL);
+	port_priv = kzalloc_obj(*port_priv);
 	if (!port_priv)
 		return -ENOMEM;
 
@@ -2209,7 +2245,7 @@ static int cp210x_attach(struct usb_serial *serial)
 	int result;
 	struct cp210x_serial_private *priv;
 
-	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	priv = kzalloc_obj(*priv);
 	if (!priv)
 		return -ENOMEM;
 
