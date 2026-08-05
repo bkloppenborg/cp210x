@@ -1,9 +1,17 @@
-obj-m = cp210x.o
-KDIR = /lib/modules/`uname -r`/build
-SRCDIR = $(PWD)
-# try this instead if you don't have PWD defined
-# SRCDIR = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+obj-m += cp210x.o
+
+# Manual builds: `make` from this directory.
+# DKMS / kbuild sets KERNELRELEASE and invokes with M=...
+ifeq ($(KERNELRELEASE),)
+KVERSION ?= $(shell uname -r)
+KDIR ?= /lib/modules/$(KVERSION)/build
+PWD := $(shell pwd)
+
 all:
-	$(MAKE) -C $(KDIR) M=$(SRCDIR) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
 clean:
-	$(MAKE) -C $(KDIR) M=$(SRCDIR) clean
+	$(MAKE) -C $(KDIR) M=$(PWD) clean
+
+.PHONY: all clean
+endif
