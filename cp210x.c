@@ -23,7 +23,8 @@
 #include <linux/bitops.h>
 #include <linux/mutex.h>
 
-#define DRIVER_DESC "Silicon Labs CP210x RS232 serial adaptor driver"
+#define DRIVER_DESC "Silicon Labs CP210x RS232 serial adaptor driver (PPS on RI)"
+#define DRIVER_VERSION "1.1.0"
 
 /*
  * Function Prototypes
@@ -2280,4 +2281,5 @@ static void cp210x_release(struct usb_serial *serial)
 module_usb_serial_driver(serial_drivers, id_table);
 
 MODULE_DESCRIPTION(DRIVER_DESC);
+MODULE_VERSION(DRIVER_VERSION);
 MODULE_LICENSE("GPL v2");

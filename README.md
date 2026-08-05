@@ -43,6 +43,8 @@ this driver.
 4. Keep stock 7.0 APIs (`kzalloc_obj`, `gpio_chip.set` returning `int`,
    current `usb_serial_driver` / termios signatures, device ID table).
 
+See [CHANGES.md](CHANGES.md) for version history. Current release: **1.1.0**.
+
 # Building, testing, and installing
 
 ## Recommended: DKMS (survives kernel updates)

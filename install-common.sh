@@ -63,13 +63,23 @@ show_status() {
 
 	path="$(modinfo -n "${MODNAME}" 2>/dev/null || true)"
 	src="$(modinfo -F srcversion "${MODNAME}" 2>/dev/null || true)"
+	desc="$(modinfo -F description "${MODNAME}" 2>/dev/null || true)"
+	ver="$(modinfo -F version "${MODNAME}" 2>/dev/null || true)"
 	live="$(cat "/sys/module/${MODNAME}/srcversion" 2>/dev/null || true)"
 
 	printf '\n'
 	log "Kernel:     $(uname -r)"
 	log "modinfo:    ${path:-not found}"
+	log "description:${desc:-n/a}"
+	log "version:    ${ver:-n/a}"
 	log "installed:  ${src:-n/a}"
 	log "loaded:     ${live:-not loaded}"
+
+	if [[ "${desc}" == *"PPS on RI"* ]]; then
+		log "OK: patched PPS driver is what modinfo resolves"
+	elif [[ -n "${desc}" ]]; then
+		warn "modinfo description has no 'PPS on RI' marker (likely stock)"
+	fi
 
 	if command -v dkms >/dev/null; then
 		dkms_st="$(dkms status -m "${PKG_NAME}" 2>/dev/null || true)"
