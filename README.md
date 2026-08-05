@@ -45,24 +45,31 @@ this driver.
 
 # Building, testing, and installing
 
-1. Install build deps for your running kernel:
+## Recommended: DKMS (survives kernel updates)
+
+```
+sudo apt install dkms linux-headers-$(uname -r) build-essential
+git clone https://github.com/sergei202/cp210x
+cd cp210x
+sudo ./install-dkms.sh
+```
+
+This registers `cp210x-pps` with DKMS so the module is rebuilt automatically
+when the kernel is upgraded. Remove with `sudo ./uninstall.sh`.
+
+## Manual install (current kernel only)
 
 ```
 sudo apt install linux-headers-$(uname -r) build-essential zstd
-```
-
-2. Build, install over the stock module (keeps a `.stock` backup), and reload:
-
-```
-git clone https://github.com/sergei202/cp210x
-cd cp210x
 sudo ./install.sh
 ```
 
-Re-run `sudo ./install.sh` after every kernel update. Subcommands:
-`--status`, `--build`, `--reload`.
+Overwrites the in-tree module (keeps a `.stock` backup). Re-run after kernel
+updates, or switch to DKMS.
 
-3. With the GPS attached (e.g. `/dev/ttyUSB0`) and a 3D fix:
+## Test
+
+With the GPS attached (e.g. `/dev/ttyUSB0`) and a 3D fix:
 
 ```
 # Kernel PPS via line discipline (creates /dev/ppsN)
